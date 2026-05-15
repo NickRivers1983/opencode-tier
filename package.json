@@ -1,0 +1,34 @@
+{
+  "name": "opencode-tier",
+  "version": "2.0.0",
+  "description": "🤖 Autonomous model tier switcher for OpenCode. Proactively monitors your Go credits and automatically switches between premium/free model tiers based on real-time budget analysis. Cross-platform, zero-config, daemon-ready.",
+  "keywords": [
+    "opencode", "open-code", "model", "tier", "switch",
+    "cost", "budget", "credits", "automatic", "autonomous",
+    "go", "zen", "gemini", "github-copilot", "plugin"
+  ],
+  "homepage": "https://github.com/nriosdev/opencode-tier",
+  "bugs": "https://github.com/nriosdev/opencode-tier/issues",
+  "license": "MIT",
+  "author": {
+    "name": "Nicolas Rios Herrera",
+    "email": "nriosdev@gmail.com",
+    "url": "https://github.com/nriosdev"
+  },
+  "bin": {
+    "opencode-tier": "./opencode-tier.js"
+  },
+  "files": [
+    "opencode-tier.js",
+    "lib/"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "preferGlobal": true,
+  "os": ["darwin", "linux", "win32"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nriosdev/opencode-tier.git"
+  }
+}
