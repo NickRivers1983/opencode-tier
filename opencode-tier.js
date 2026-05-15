@@ -608,7 +608,7 @@ function cmdHelp() {
   console.log(`  ${clr('INFO', C.bold)}`);
   console.log(`    Changes take effect on ${clr('NEXT', C.bold)} OpenCode session`);
   console.log(`    Config backups: ~/.local/share/opencode-tier/`);
-  console.log(`    Docs: https://github.com/nriosdev/opencode-tier`);
+    console.log(`    Docs: https://github.com/NickRivers1983/opencode-tier`);
   console.log('');
 }
 

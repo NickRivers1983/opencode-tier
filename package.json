@@ -7,8 +7,8 @@
     "cost", "budget", "credits", "automatic", "autonomous",
     "go", "zen", "gemini", "github-copilot", "plugin"
   ],
-  "homepage": "https://github.com/nriosdev/opencode-tier",
-  "bugs": "https://github.com/nriosdev/opencode-tier/issues",
+  "homepage": "https://github.com/NickRivers1983/opencode-tier",
+  "bugs": "https://github.com/NickRivers1983/opencode-tier/issues",
   "license": "MIT",
   "author": {
     "name": "Nicolas Rios Herrera",
@@ -29,6 +29,6 @@
   "os": ["darwin", "linux", "win32"],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nriosdev/opencode-tier.git"
+    "url": "git+https://github.com/NickRivers1983/opencode-tier.git"
   }
 }
