@@ -1,7 +1,7 @@
 {
   "name": "opencode-tier",
-  "version": "2.0.0",
-  "description": "🤖 Autonomous model tier switcher for OpenCode. Proactively monitors your Go credits and automatically switches between premium/free model tiers based on real-time budget analysis. Cross-platform, zero-config, daemon-ready.",
+  "version": "2.1.0",
+  "description": "🤖 Autonomous model tier switcher for OpenCode. Proactively monitors Go credits, sends desktop alerts, and auto-switches between premium/free model tiers based on real-time budget analysis. Cross-platform, zero-config, daemon-ready.",
   "keywords": [
     "opencode", "open-code", "model", "tier", "switch",
     "cost", "budget", "credits", "automatic", "autonomous",

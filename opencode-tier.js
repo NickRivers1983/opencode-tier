@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * opencode-tier v2.0.0
+ * opencode-tier v2.1.0
  * ─────────────────────
  * Smart autonomous model tier switcher for OpenCode.
  *
@@ -65,6 +65,8 @@ const config = require('./lib/config');
 const budget = require('./lib/budget');
 const providers = require('./lib/providers');
 const scheduler = require('./lib/scheduler');
+const notify = require('./lib/notify');
+const alert = require('./lib/alert');
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -109,8 +111,12 @@ function error(msg) {
 
 /**
  * Apply a tier by name.
+ * @param {string} tierKey
+ * @param {Object} [opts]
+ * @param {boolean} [opts.silent]     - Suppress output
+ * @param {'auto'|'manual'} [opts.source] - Who initiated (default: 'manual')
  */
-function cmdApplyTier(tierKey, { silent } = {}) {
+function cmdApplyTier(tierKey, { silent, source } = {}) {
   const tierDef = tiers.TIERS[tierKey];
   if (!tierDef) {
     error(`Unknown tier: ${tierKey}`);
@@ -119,9 +125,33 @@ function cmdApplyTier(tierKey, { silent } = {}) {
 
   try {
     const cfg = config.readConfig();
+
+    // Track manual overrides (even when tier unchanged — records user intent)
+    if (source !== 'auto') {
+      config.recordManualOverride(tierKey);
+    }
+
+    // Skip write if config already matches this tier (redundant write prevention)
+    if (config.configAlreadyMatchesTier(cfg, tierDef)) {
+      if (!silent) {
+        console.log('');
+        console.log(`  ${tierDef.icon}  ${clr('Already on ' + tierDef.label + ' tier', C.dim)}`);
+        console.log(`     No config changes needed.`);
+        console.log('');
+      }
+      return;
+    }
+
     config.applyTierToConfig(cfg, tierDef);
     const backup = config.writeConfig(cfg);
     config.logSwitch(tierDef.label);
+
+    if (source === 'auto') {
+      config.recordAutoSwitch(tierKey);
+    }
+
+    // Send tier change notification
+    alert.notifyTierChange(tierKey, tierDef, source || 'manual');
 
     if (!silent) {
       console.log('');
@@ -168,6 +198,8 @@ function cmdAuto({ yes } = {}) {
     if (!yes) {
       console.log(`  ${clr(icons.arrow, C.blue)}  Run ${clr('opencode-tier ultimate', C.bold)} to use free pro models.`);
       console.log('');
+    } else {
+      return cmdApplyTier('ultimate', { silent: true, source: 'auto' });
     }
   }
 
@@ -184,7 +216,7 @@ function cmdAuto({ yes } = {}) {
     const recTier = providers.bestTierForProviders(prov);
     console.log(`  ${clr(icons.arrow, C.blue)}  Recommended: ${clr(recTier.toUpperCase(), C.bold)}`);
     console.log('');
-    return cmdApplyTier(recTier, { silent: yes });
+    return cmdApplyTier(recTier, { silent: yes, source: 'auto' });
   }
 
   if (analysis.error) {
@@ -196,7 +228,7 @@ function cmdAuto({ yes } = {}) {
     if (!yes) {
       if (!process.stdin.isTTY) {
         // Non-TTY: skip confirmation (same as --yes)
-        return cmdApplyTier(recTier, { silent: true });
+        return cmdApplyTier(recTier, { silent: true, source: 'auto' });
       }
       // Interactive confirm
       const rl = require('readline').createInterface({ input: process.stdin, output: process.stdout });
@@ -206,11 +238,11 @@ function cmdAuto({ yes } = {}) {
           console.log(`  ${clr('Cancelled.', C.dim)}`);
           return;
         }
-        cmdApplyTier(recTier);
+        cmdApplyTier(recTier, { source: 'auto' });
       });
       return;
     }
-    return cmdApplyTier(recTier, { silent: yes });
+    return cmdApplyTier(recTier, { silent: yes, source: 'auto' });
   }
 
   // Step 4: Show budget breakdown
@@ -235,17 +267,38 @@ function cmdAuto({ yes } = {}) {
   console.log(`  Tier:     ${suggestedTier.icon}  ${clr(suggestedKey.toUpperCase(), C.bold)}  ${clr(suggestedTier.description, C.dim)}`);
   console.log('');
 
+  // Preemptive budget warnings
+  if (analysis.breakdown) {
+    alert.checkAndWarn(urgency, analysis.breakdown);
+  }
+
+  // Check cooldown / manual override before switching
+  const autoCheck = config.shouldAutoSwitch(urgency, suggestedKey);
+  if (!autoCheck.allowed) {
+    warn(`Auto-switch blocked: ${autoCheck.reason}`);
+    console.log(`  ${clr('Run manually to override:', C.dim)}  opencode-tier ${suggestedKey}`);
+    console.log('');
+    return;
+  }
+
+  // Emergency: clear manual override if urgency is critical
+  if (urgency >= config.EMERGENCY_URGENCY) {
+    config.clearManualOverride();
+    warn(`Emergency mode: urgency ${urgency}% — overriding manual settings`);
+    console.log('');
+  }
+
   if (yes) {
     success(`Auto-selected ${suggestedKey.toUpperCase()} (${clr(`--yes`, C.dim)})`);
     console.log('');
-    return cmdApplyTier(suggestedKey, { silent: true });
+    return cmdApplyTier(suggestedKey, { silent: true, source: 'auto' });
   }
 
   if (!process.stdin.isTTY) {
     // Non-TTY: skip confirmation (same as --yes)
     success(`Auto-selected ${suggestedKey.toUpperCase()} (non-interactive)`);
     console.log('');
-    return cmdApplyTier(suggestedKey, { silent: true });
+    return cmdApplyTier(suggestedKey, { silent: true, source: 'auto' });
   }
 
   // Interactive
@@ -254,7 +307,7 @@ function cmdAuto({ yes } = {}) {
     rl.close();
     const ans = answer.trim().toLowerCase();
     if (ans === '' || ans === 'y' || ans === 'yes') {
-      return cmdApplyTier(suggestedKey);
+      return cmdApplyTier(suggestedKey, { source: 'auto' });
     }
     if (tiers.TIERS[ans]) {
       return cmdApplyTier(ans);
@@ -290,19 +343,37 @@ function cmdWatch(interval) {
       }
 
       const { key } = tiers.selectTierForUrgency(analysis.urgency);
+      const tierDef = tiers.TIERS[key];
 
-      if (key !== lastTier && lastTier !== null) {
-        const tierDef = tiers.TIERS[key];
+      // Preemptive budget warnings (sent via desktop notification)
+      if (analysis.breakdown) {
+        alert.checkAndWarn(analysis.urgency, analysis.breakdown);
+      }
+
+      // Check cooldown / manual override
+      if (key !== lastTier) {
+        const autoCheck = config.shouldAutoSwitch(analysis.urgency, key);
+        if (!autoCheck.allowed) {
+          const ts = new Date().toLocaleTimeString();
+          console.log(`  [${clr(ts, C.dim)}] ${clr('Skipping:', C.yellow)} ${autoCheck.reason}`);
+          return;
+        }
+
+        // Emergency override
+        if (analysis.urgency >= config.EMERGENCY_URGENCY) {
+          config.clearManualOverride();
+        }
+
         const ts = new Date().toLocaleTimeString();
-        console.log(`  [${clr(ts, C.dim)}] ${clr('Budget:', C.dim)} ${analysis.urgency}%  ${clr(icons.arrow, C.blue)}  Switching to ${tierDef.icon} ${clr(key.toUpperCase(), C.bold)}`);
-        cmdApplyTier(key, { silent: true });
-      } else if (lastTier === null) {
-        const tierDef = tiers.TIERS[key];
-        console.log(`  [${clr(new Date().toLocaleTimeString(), C.dim)}] ${clr('Initial:', C.dim)} ${analysis.urgency}% → ${tierDef.icon} ${clr(key.toUpperCase(), C.bold)}`);
-        // Apply on first check if different from current
-        const currentTier = tiers.detectTier(config.readConfig().agent);
-        if (currentTier !== key) {
-          cmdApplyTier(key, { silent: true });
+        if (lastTier !== null) {
+          console.log(`  [${clr(ts, C.dim)}] ${clr('Budget:', C.dim)} ${analysis.urgency}%  ${clr(icons.arrow, C.blue)}  Switching to ${tierDef.icon} ${clr(key.toUpperCase(), C.bold)}`);
+          cmdApplyTier(key, { silent: true, source: 'auto' });
+        } else {
+          console.log(`  [${clr(ts, C.dim)}] ${clr('Initial:', C.dim)} ${analysis.urgency}% → ${tierDef.icon} ${clr(key.toUpperCase(), C.bold)}`);
+          const currentTier = tiers.detectTier(config.readConfig().agent);
+          if (currentTier !== key) {
+            cmdApplyTier(key, { silent: true, source: 'auto' });
+          }
         }
       }
       lastTier = key;
@@ -386,6 +457,25 @@ function cmdStatus() {
     console.log(`     Run ${clr('opencode-tier install', C.bold)} to enable automatic tier switching.`);
   }
   console.log('');
+
+  // Notifications
+  const notif = notify.checkAvailability();
+  console.log(`  ${clr('Notifications:', C.dim)}`);
+  console.log(`    ${clr('Desktop:'.padEnd(14), C.dim)} ${notif.available ? clr(icons.check + ' ' + notif.method, C.green) : clr('not available', C.yellow)}`);
+
+  // Manual override status
+  if (config.hasActiveManualOverride()) {
+    const override = config.state.get('manualOverride');
+    console.log(`    ${clr('Override:'.padEnd(14), C.dim)} ${clr('manual ' + override.tier.toUpperCase() + ' (respected until ' + new Date(override.timestamp + config.MANUAL_OVERRIDE_GRACE_MS).toLocaleTimeString() + ')', C.yellow)}`);
+  }
+  console.log('');
+
+  // Alert status
+  const warnLevel = alert.getHighestWarningLevel();
+  if (warnLevel) {
+    console.log(`  ${clr('Alerts:', C.dim)} Last warning at ${clr(warnLevel + '%', warnLevel >= 90 ? C.red : warnLevel >= 80 ? C.yellow : C.yellow)} urgency`);
+    console.log('');
+  }
 
   // Recent switches
   const logs = config.tailLog(5);
@@ -572,7 +662,7 @@ function cmdUninstall() {
  * Show help.
  */
 function cmdHelp() {
-  header('OPENCODE-TIER', 'v2.0.0 — Autonomous model tier switcher');
+  header('OPENCODE-TIER', 'v2.1.0 — Autonomous tier switcher + alerts');
 
   console.log(`  ${clr('USAGE', C.bold)}`);
   console.log(`    opencode-tier <command>`);
@@ -582,7 +672,7 @@ function cmdHelp() {
   console.log(`    green       ${clr('Full paid power — deepseek-v4-pro, qwen3.6-plus', C.dim)}`);
   console.log(`    yellow      ${clr('Balanced mid-range — deepseek-v4-flash, minimax', C.dim)}`);
   console.log(`    orange      ${clr('Economy — cheap paid + free Zen mix', C.dim)}`);
-  console.log(`    red         ${clr('Survival — free Zen only (big-pickle)', C.dim)}`);
+  console.log(`    red         ${clr('Survival — free Zen models (qwen + deepseek + minimax)', C.dim)}`);
   console.log(`    auto        ${clr('Auto-detect best tier based on budget', C.dim)}`);
   console.log(`    watch [N]   ${clr('Continuous monitoring (checks every N min)', C.dim)}`);
   console.log(`    status      ${clr('Show current configuration and budget', C.dim)}`);
@@ -596,7 +686,7 @@ function cmdHelp() {
   console.log(`    ${clr('🟢 Green', C.green)}     $6-12/day (Go paid models, full power)`);
   console.log(`    ${clr('🟡 Yellow', C.yellow)}    $2-5/day (Go mid-range)`);
   console.log(`    ${clr('🟠 Orange', C.yellow)}    $0.30-1/day (Go cheap + free mix)`);
-  console.log(`    ${clr('🔴 Red', C.red)}       $0/day (Zen free only)`);
+  console.log(`    ${clr('🔴 Red', C.red)}       $0/day (Zen free — distributed across 4 models)`);
   console.log('');
   console.log(`  ${clr('EXAMPLES', C.bold)}`);
   console.log(`    opencode-tier auto              ${clr('# Interactive budget check', C.dim)}`);
