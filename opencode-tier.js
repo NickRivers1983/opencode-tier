@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * opencode-tier v2.1.0
+ * opencode-tier v3.1.0
  * ─────────────────────
  * Smart autonomous model tier switcher for OpenCode.
  *
@@ -21,7 +21,7 @@
  *   orange      🟠 Economy (cheap paid + free mix)
  *   red         🔴 Survival (free Zen only — big-pickle)
  *   auto        🤖 Auto-detect and apply best tier based on budget
- *   watch [N]   👁  Continuous monitoring (checks every N min, default: 30)
+ *   watch [N]   👁  Continuous monitoring (checks every N min, default: 5)
  *   status      📊 Show current configuration and budget
  *   providers   🔌 Show connected AI providers
  *   setup       🛠  Interactive setup wizard
@@ -272,6 +272,16 @@ function cmdAuto({ yes } = {}) {
     alert.checkAndWarn(urgency, analysis.breakdown);
   }
 
+  // Imminent boundary detection — warn user to save BEFORE tier switches
+  if (urgency !== null && urgency !== undefined) {
+    const boundaryAlert = alert.checkImminentBoundary(urgency);
+    if (boundaryAlert.imminent) {
+      console.log(`  ${clr('⚠', C.yellow)}  Tier change to ${clr(boundaryAlert.tier, C.bold)} approaching.`);
+      console.log(`     ${clr('SAVE YOUR WORK before the switch triggers.', C.yellow)}`);
+      console.log('');
+    }
+  }
+
   // Check cooldown / manual override before switching
   const autoCheck = config.shouldAutoSwitch(urgency, suggestedKey);
   if (!autoCheck.allowed) {
@@ -324,7 +334,7 @@ function cmdAuto({ yes } = {}) {
  * Continuous monitoring (watch mode).
  */
 function cmdWatch(interval) {
-  const intervalMin = parseInt(interval, 10) || 30;
+  const intervalMin = parseInt(interval, 10) || 5;
 
   header('TIER WATCH', `Auto-adjusting every ${intervalMin} min`);
 
@@ -348,6 +358,11 @@ function cmdWatch(interval) {
       // Preemptive budget warnings (sent via desktop notification)
       if (analysis.breakdown) {
         alert.checkAndWarn(analysis.urgency, analysis.breakdown);
+      }
+
+      // Imminent boundary detection — warn user to save BEFORE tier switches
+      if (analysis.urgency !== null && analysis.urgency !== undefined) {
+        alert.checkImminentBoundary(analysis.urgency);
       }
 
       // Check cooldown / manual override
