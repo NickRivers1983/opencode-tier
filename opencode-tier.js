@@ -260,7 +260,10 @@ function cmdAuto({ yes } = {}) {
   console.log('');
 
   // Step 5: Select and apply tier
-  const { key: suggestedKey, tier: suggestedTier } = tiers.selectTierForUrgency(urgency, { hasGo: prov.opencodeGo });
+  // Detect current tier for hysteresis (prevents oscillation on re-upgrade)
+  let currentTier;
+  try { currentTier = tiers.detectTier(config.readConfig().agent); } catch { currentTier = null; }
+  const { key: suggestedKey, tier: suggestedTier } = tiers.selectTierForUrgency(urgency, { hasGo: prov.opencodeGo, currentTier, skipMidTiers: true });
 
   const urgencyColor = urgency >= 60 ? C.red : urgency >= 30 ? C.yellow : C.green;
   console.log(`  Urgency:  ${clr(`${urgency}%`, urgencyColor)}`);
@@ -352,7 +355,12 @@ function cmdWatch(interval) {
         return;
       }
 
-      const { key } = tiers.selectTierForUrgency(analysis.urgency);
+      // Detect current tier from config (not lastTier in memory — respects manual changes)
+      let cfg;
+      try { cfg = config.readConfig(); } catch { /* stale config, use lastTier fallback */ }
+      const currentTier = cfg ? tiers.detectTier(cfg.agent) : lastTier;
+
+      const { key } = tiers.selectTierForUrgency(analysis.urgency, { currentTier, skipMidTiers: true });
       const tierDef = tiers.TIERS[key];
 
       // Preemptive budget warnings (sent via desktop notification)
@@ -677,7 +685,7 @@ function cmdUninstall() {
  * Show help.
  */
 function cmdHelp() {
-  header('OPENCODE-TIER', 'v2.1.0 — Autonomous tier switcher + alerts');
+  header('OPENCODE-TIER', 'v3.1.0 — Autonomous tier switcher + alerts');
 
   console.log(`  ${clr('USAGE', C.bold)}`);
   console.log(`    opencode-tier <command>`);
