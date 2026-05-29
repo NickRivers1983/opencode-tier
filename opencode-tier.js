@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * opencode-tier v3.1.0
+ * opencode-tier v3.2.0
  * ─────────────────────
  * Smart autonomous model tier switcher for OpenCode.
  *
@@ -263,11 +263,10 @@ function cmdAuto({ yes } = {}) {
   // Detect current tier for hysteresis (prevents oscillation on re-upgrade)
   let currentTier;
   try { currentTier = tiers.detectTier(config.readConfig().agent); } catch { currentTier = null; }
-  const { key: suggestedKey, tier: suggestedTier } = tiers.selectTierForUrgency(urgency, { hasGo: prov.opencodeGo, currentTier, skipMidTiers: true });
+  const { key: suggestedKey, tier: suggestedTier } = tiers.selectTierForUrgency(urgency, { hasGo: prov.opencodeGo, currentTier, skipMidTiers: false });
 
   const urgencyColor = urgency >= 60 ? C.red : urgency >= 30 ? C.yellow : C.green;
   console.log(`  Urgency:  ${clr(`${urgency}%`, urgencyColor)}`);
-  console.log(`  Tier:     ${suggestedTier.icon}  ${clr(suggestedKey.toUpperCase(), C.bold)}  ${clr(suggestedTier.description, C.dim)}`);
   console.log('');
 
   // Preemptive budget warnings
@@ -288,8 +287,8 @@ function cmdAuto({ yes } = {}) {
   // Check cooldown / manual override before switching
   const autoCheck = config.shouldAutoSwitch(urgency, suggestedKey);
   if (!autoCheck.allowed) {
-    warn(`Auto-switch blocked: ${autoCheck.reason}`);
-    console.log(`  ${clr('Run manually to override:', C.dim)}  opencode-tier ${suggestedKey}`);
+    console.log(`  ${clr('Suggested:', C.dim)} ${suggestedTier.icon}  ${clr(suggestedKey.toUpperCase(), C.bold)}  ${clr('— blocked: ' + autoCheck.reason, C.yellow)}`);
+    console.log(`  ${clr('Run manually:', C.dim)}  opencode-tier ${suggestedKey}`);
     console.log('');
     return;
   }
@@ -300,6 +299,10 @@ function cmdAuto({ yes } = {}) {
     warn(`Emergency mode: urgency ${urgency}% — overriding manual settings`);
     console.log('');
   }
+
+  // Show selected tier
+  console.log(`  Tier:     ${suggestedTier.icon}  ${clr(suggestedKey.toUpperCase(), C.bold)}  ${clr(suggestedTier.description, C.dim)}`);
+  console.log('');
 
   if (yes) {
     success(`Auto-selected ${suggestedKey.toUpperCase()} (${clr(`--yes`, C.dim)})`);
@@ -360,7 +363,7 @@ function cmdWatch(interval) {
       try { cfg = config.readConfig(); } catch { /* stale config, use lastTier fallback */ }
       const currentTier = cfg ? tiers.detectTier(cfg.agent) : lastTier;
 
-      const { key } = tiers.selectTierForUrgency(analysis.urgency, { currentTier, skipMidTiers: true });
+      const { key } = tiers.selectTierForUrgency(analysis.urgency, { currentTier, skipMidTiers: false });
       const tierDef = tiers.TIERS[key];
 
       // Preemptive budget warnings (sent via desktop notification)
